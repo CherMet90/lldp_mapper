@@ -1,0 +1,6 @@
+.vscode/
+__pycache__/
+.reygpt-mask.yml
+diagrams/
+*.log
+topology_cache.json
