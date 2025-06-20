@@ -288,7 +288,7 @@ class Topology:
 
             # Сохраняем обновленные данные с минимальным форматированием для больших кешей
             with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(existing_data, f, indent=None)
+                json.dump(existing_data, f, indent=2)
             logger.info(f"Cache saved for site {self.site}: {filename}")
         except Exception as e:
             logger.error(f"Failed to save cache: {e}")
