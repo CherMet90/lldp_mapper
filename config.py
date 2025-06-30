@@ -88,7 +88,7 @@ DOT_GLOBAL_SETTINGS = {
 }
 
 CISCO_STYLES = {
-    'default': 'shape=mxgraph.cisco_safe.design.blank_device;',
+    'default': 'shape=mxgraph.cisco_safe.design.blank_device;fillColor=#e1d5e7;',
     'poe-switch': 'shape=mxgraph.cisco19.rect;prIcon=l2_switch;',
     'access-switch': 'shape=mxgraph.cisco19.rect;prIcon=l2_switch;',
     'aggregation-switch': 'shape=mxgraph.cisco19.rect;prIcon=l2_switch;',
@@ -112,7 +112,6 @@ DRAWIO_SETTINGS = {
 
     # Стили устройств
     'device_style': {
-        'fillColor': '#FAFAFA',
         'strokeColor': '#005073',
         'labelBackgroundColor': 'default',
         'verticalLabelPosition': 'center',

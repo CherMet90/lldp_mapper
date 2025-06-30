@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import os
 import re
@@ -93,15 +94,37 @@ class Topology:
         device_dict = self._device_to_dict(device)
         return device_dict.get('role', '')
 
-    def is_link_permitted(self, a_dev:str, b_dev:str, meta:dict, allow_oneway:Set[str]) -> bool:
+    def _matches_pattern(self, device_name: str, patterns: Set[str]) -> bool:
+        """
+        Проверяет, соответствует ли имя устройства одному из шаблонов.
+    
+        Args:
+            device_name: Имя устройства для проверки
+            patterns: Множество шаблонов (может содержать маски и точные имена)
+    
+        Returns:
+            True если имя соответствует хотя бы одному шаблону
+        """
+        for pattern in patterns:
+            # Точное совпадение
+            if device_name == pattern:
+                return True
+            # Проверка по маске (если содержит специальные символы)
+            if '*' in pattern or '?' in pattern or '[' in pattern:
+                if fnmatch.fnmatch(device_name, pattern):
+                    return True
+        return False
+
+    def is_link_permitted(self, a_dev: str, b_dev: str, meta: dict, allow_oneway: Set[str]) -> bool:
         """
         Проверяет, разрешена ли связь согласно правилам фильтрации.
+        Поддерживает маски устройств (ap-*, NWA*, etc.)
 
         Args:
             a_dev: Имя устройства A
             b_dev: Имя устройства B
             meta: Метаданные соединения
-            allow_oneway: Множество имен/ролей, для которых разрешены односторонние связи
+            allow_oneway: Множество имен/ролей/масок, для которых разрешены односторонние связи
 
         Returns:
             True если связь разрешена, иначе False
@@ -109,11 +132,23 @@ class Topology:
         # Всегда разрешаем двусторонние связи
         if meta.get('bidirectional', False):
             return True
-
-        # Проверяем, разрешены ли односторонние связи для любого из устройств
-        a_allowed = a_dev in allow_oneway or self._get_device_role(a_dev) in allow_oneway
-        b_allowed = b_dev in allow_oneway or self._get_device_role(b_dev) in allow_oneway
-
+    
+        # Получаем роли устройств
+        a_role = self._get_device_role(a_dev)
+        b_role = self._get_device_role(b_dev)
+    
+        # Проверяем разрешения для устройства A
+        a_allowed = (
+            self._matches_pattern(a_dev, allow_oneway) or  # По маске/имени
+            (a_role and a_role in allow_oneway)            # По роли
+        )
+    
+        # Проверяем разрешения для устройства B
+        b_allowed = (
+            self._matches_pattern(b_dev, allow_oneway) or  # По маске/имени
+            (b_role and b_role in allow_oneway)            # По роли
+        )
+    
         return a_allowed or b_allowed
 
     def add_device(self, cd):
@@ -123,14 +158,14 @@ class Topology:
         """
         now = self.current_time
         self.devices[cd.nb_name] = cd
-    
+
         for intf in cd.interfaces:
-            # Создаем прямой и обратный ключи
+            # создаём ключи
             k_fwd = self._make_link_key(cd.nb_name, intf.name,
-                               intf.lldp_rem_name, intf.lldp_rem_port)
+                                        intf.lldp_rem_name, intf.lldp_rem_port)
             k_rev = self._make_link_key(intf.lldp_rem_name, intf.lldp_rem_port,
-                               cd.nb_name, intf.name)
-    
+                                        cd.nb_name, intf.name)
+
             # Случай 1: Если прямой ключ уже есть в обратном словаре, значит зеркальная связь уже была добавлена ранее в текущем run
             if k_fwd in self._reverse_keys:
                 self.connections[k_rev]['bidirectional'] = True
@@ -726,6 +761,17 @@ class Topology:
         logger.info(f"Draw.io diagram exported to: {filename}")
 
     # ---------- Фильтрация топологии ----------
+    def _create_placeholder(self, dev_name: str) -> dict:
+        """Создаёт минимальную запись устройства для отрисовки."""
+        return {
+            'nb_name': dev_name,
+            'hostname': dev_name,
+            'ip': '',
+            'model': '',
+            'serial': '',
+            'role': ''
+        }
+
     def get_bidirectional_topology(self, allow_oneway: Set[str]) -> 'Topology':
         """
         Возвращает топологию, содержащую:
@@ -744,16 +790,17 @@ class Topology:
 
         # Создаем новую топологию с той же площадкой
         filtered_topo = Topology(self.site)
-
+        filtered_topo.devices = self.devices.copy()  # Копируем все известные устройства
+    
         for (a, ap, b, bp), meta in self.connections.items():
-            # Проверяем, разрешена ли связь
             if self.is_link_permitted(a, b, meta, allow_oneway):
+                # Добавляем связь
                 filtered_topo.connections[(a, ap, b, bp)] = meta
 
-                # Добавляем оба устройства в новую топологию
-                if a in self.devices:
-                    filtered_topo.devices[a] = self.devices[a]
-                if b in self.devices:
-                    filtered_topo.devices[b] = self.devices[b]
+                # Создаём placeholder только для разрешённых устройств, которых ещё нет
+                if a not in filtered_topo.devices and self._matches_pattern(a, allow_oneway):
+                    filtered_topo.devices[a] = self._create_placeholder(a)
+                if b not in filtered_topo.devices and self._matches_pattern(b, allow_oneway):
+                    filtered_topo.devices[b] = self._create_placeholder(b)
 
         return filtered_topo
